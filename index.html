@@ -63,9 +63,67 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6"> 
+     <!-- <div class="lg:col-span-1 space-y-4 max-h-[calc(100vh-140px)] overflow-y-auto"> -->
       <!-- Left Column: PDF Upload & Memory Bank -->
       <div class="lg:col-span-1 space-y-6">
+        <!-- System Controls -->
+        <div class="bg-white rounded-xl shadow p-4">
+          <h2 class="text-sm font-bold text-gray-800 mb-2 flex items-center justify-between">
+            ⚙️ Controls
+            <span class="text-xs text-gray-500">(LLM)</span>
+          </h2>
+
+          <div class="grid grid-cols-2 gap-3 text-xs">
+
+            <!-- Temperature -->
+            <div>
+              <label class="font-semibold">
+                Temp: <span id="tempValue">0.3</span>
+              </label>
+              <input
+                type="range"
+                id="temperatureSlider"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.3"
+                class="w-full"
+              >
+            </div>
+
+            <!-- Max Tokens -->
+            <div>
+              <label class="font-semibold">
+                Tokens: <span id="tokenValue">512</span>
+              </label>
+              <input
+                type="range"
+                id="tokenSlider"
+                min="128"
+                max="2048"
+                step="64"
+                value="512"
+                class="w-full"
+              >
+            </div>
+
+          </div>
+
+          <!-- Model selector -->
+          <div class="mt-2 text-xs">
+            <label class="font-semibold">Model</label>
+            <select id="modelSelect" class="w-full border rounded px-2 py-1">
+              <option value="TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC">
+                TinyLlama (fast)
+              </option>
+              <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">
+                Qwen 1.5B (better)
+              </option>
+            </select>
+          </div>
+        </div>
+
         <!-- PDF Upload Card -->
         <div class="bg-white rounded-xl shadow-2xl p-6">
           <h2 class="text-xl font-bold text-gray-800 mb-4 border-b-2 border-indigo-500 pb-2">
@@ -206,27 +264,36 @@
     // ============================================
     // Embeddings Engine Module
     // ============================================
+
+    const systemConfig = {
+        temperature: 0.3,
+        maxTokens: 512,
+        model: "TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC"
+      };
+
     const EmbeddingsEngine = (() => {
       let pipeline = null;
       let isReady = false;
 
       async function initialize() {
-        try {
-          console.log('🔄 Loading embedding model...');
-          const { pipeline: pipelineFn } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
-          pipeline = await pipelineFn('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-          isReady = true;
-          console.log('✅ Embedding model ready');
-          return true;
-        } catch (error) {
-          console.error('❌ Embedding model failed:', error);
-          throw error;
-        }
+        const { pipeline: pipelineFn } = await import(
+          'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2'
+        );
+
+        pipeline = await pipelineFn(
+          'feature-extraction',
+          'Xenova/all-MiniLM-L6-v2'
+        );
+
+        isReady = true;
       }
 
       async function generateEmbedding(text) {
         if (!isReady) throw new Error('Embeddings not ready');
-        const output = await pipeline(text, { pooling: 'mean', normalize: true });
+        const output = await pipeline(text, {
+          pooling: 'mean',
+          normalize: true
+        });
         return Array.from(output.data);
       }
 
@@ -239,7 +306,11 @@
         return embeddings;
       }
 
-      return { initialize, generateEmbedding, generateBatchEmbeddings };
+      return {
+        initialize,
+        generateEmbedding,
+        generateBatchEmbeddings
+      };
     })();
 
     // ============================================
@@ -332,8 +403,8 @@
         
         const response = await engine.chat.completions.create({
           messages: messages,
-          temperature: 0.7,
-          max_tokens: 512
+          temperature: systemConfig.temperature,
+          max_tokens: systemConfig.maxTokens
         });
         
         return response.choices[0].message.content;
@@ -432,6 +503,23 @@
         else element.className += 'bg-yellow-400 text-gray-900';
       }
 
+      async function reloadModel() {
+        updateStatus(elements.llmStatus, 'Reloading model...', 'loading');
+        elements.chatInput.disabled = true;
+        elements.sendBtn.disabled = true;
+
+        await LLMEngine.reload(systemConfig.model, progress => {
+          const percent = (progress.progress * 100).toFixed(0);
+          updateStatus(elements.llmStatus, `Loading LLM: ${percent}%`, 'loading');
+        });
+
+        updateStatus(elements.llmStatus, '✓ LLM Ready', 'success');
+        elements.chatInput.disabled = false;
+        elements.sendBtn.disabled = false;
+      }
+
+
+
       function checkReadyState() {
         if (state.isEmbeddingReady && state.isLLMReady) {
           elements.chatInput.disabled = false;
@@ -459,6 +547,25 @@
           }
         });
         elements.clearBtn.addEventListener('click', clearAllData);
+        const tempSlider = document.getElementById('temperatureSlider');
+        const tokenSlider = document.getElementById('tokenSlider');
+        const modelSelect = document.getElementById('modelSelect');
+
+        tempSlider.addEventListener('input', e => {
+          systemConfig.temperature = parseFloat(e.target.value);
+          document.getElementById('tempValue').textContent = e.target.value;
+        });
+
+        tokenSlider.addEventListener('input', e => {
+          systemConfig.maxTokens = parseInt(e.target.value);
+          document.getElementById('tokenValue').textContent = e.target.value;
+        });
+
+        modelSelect.addEventListener('change', async e => {
+          systemConfig.model = e.target.value;
+          await reloadModel();
+        });
+
       }
 
       function handleDrop(e) {
