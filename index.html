@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PDF Research Assistant - Step 1.1</title>
+  <title>PDF Research Assistant - RAG Engine</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2"></script>
   <style>
     * {
       margin: 0;
@@ -21,7 +22,7 @@
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
@@ -70,6 +71,12 @@
       transform: scale(1.02);
     }
 
+    .drop-zone.disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
     .drop-zone-icon {
       font-size: 48px;
       margin-bottom: 15px;
@@ -92,7 +99,7 @@
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 15px;
       margin-top: 20px;
     }
@@ -116,8 +123,86 @@
       opacity: 0.9;
     }
 
-    .processed-files {
+    .search-section {
       margin-top: 20px;
+      padding: 20px;
+      background: #f8f9ff;
+      border-radius: 8px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 15px;
+      font-size: 1em;
+      border: 2px solid #667eea;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      transition: border-color 0.3s ease;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: #764ba2;
+    }
+
+    .search-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1em;
+      transition: background 0.3s ease;
+      margin-right: 10px;
+    }
+
+    .search-btn:hover {
+      background: #764ba2;
+    }
+
+    .search-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .search-results {
+      margin-top: 20px;
+    }
+
+    .result-item {
+      background: white;
+      border-left: 4px solid #667eea;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .result-source {
+      color: #667eea;
+      font-weight: bold;
+      font-size: 0.9em;
+    }
+
+    .result-score {
+      background: #667eea;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.85em;
+    }
+
+    .result-text {
+      color: #333;
+      line-height: 1.6;
     }
 
     .file-item {
@@ -139,66 +224,6 @@
       color: #666;
     }
 
-    .chunks-preview {
-      margin-top: 20px;
-    }
-
-    .chunk-item {
-      background: #fff;
-      border: 1px solid #e0e0e0;
-      padding: 15px;
-      margin-bottom: 10px;
-      border-radius: 6px;
-      font-size: 0.9em;
-    }
-
-    .chunk-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      color: #667eea;
-      font-weight: bold;
-      font-size: 0.85em;
-    }
-
-    .chunk-text {
-      color: #333;
-      line-height: 1.6;
-      max-height: 100px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .chunk-text.expanded {
-      max-height: none;
-    }
-
-    .chunk-text::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 30px;
-      background: linear-gradient(transparent, white);
-    }
-
-    .chunk-text.expanded::after {
-      display: none;
-    }
-
-    .expand-btn {
-      color: #667eea;
-      cursor: pointer;
-      font-size: 0.85em;
-      margin-top: 5px;
-      display: inline-block;
-    }
-
-    .expand-btn:hover {
-      text-decoration: underline;
-    }
-
     .loading {
       text-align: center;
       padding: 20px;
@@ -218,6 +243,21 @@
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transition: width 0.3s ease;
     }
 
     .clear-btn {
@@ -242,250 +282,658 @@
       border-bottom: 2px solid #667eea;
       padding-bottom: 10px;
     }
+
+    .status-badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 12px;
+      font-size: 0.85em;
+      font-weight: bold;
+      margin-left: 10px;
+    }
+
+    .status-loading {
+      background: #ffc107;
+      color: #333;
+    }
+
+    .status-ready {
+      background: #28a745;
+      color: white;
+    }
+
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 968px) {
+      .grid-2col {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .memory-bank {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    .memory-item {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 0.9em;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
       <h1>📚 AI Research Assistant</h1>
-      <p>Step 1.1: PDF Extraction & Chunking</p>
+      <p>RAG Engine: PDF Processing + Vector Search</p>
+      <span id="embeddingStatus" class="status-badge status-loading">Loading Embeddings...</span>
     </div>
 
-    <div class="card">
-      <div class="drop-zone" id="dropZone">
-        <div class="drop-zone-icon">📄</div>
-        <div class="drop-zone-text">Drop PDF files here or click to browse</div>
-        <div class="drop-zone-subtext">Supports multiple PDFs</div>
+    <div class="grid-2col">
+      <div>
+        <div class="card">
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-icon">📄</div>
+            <div class="drop-zone-text">Drop PDF files here or click to browse</div>
+            <div class="drop-zone-subtext">Supports multiple PDFs</div>
+          </div>
+          <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
+
+          <div class="stats">
+            <div class="stat-card">
+              <div class="stat-value" id="fileCount">0</div>
+              <div class="stat-label">PDFs Loaded</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="chunkCount">0</div>
+              <div class="stat-label">Text Chunks</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="vectorCount">0</div>
+              <div class="stat-label">Vectors Stored</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="charCount">0</div>
+              <div class="stat-label">Characters</div>
+            </div>
+          </div>
+
+          <div id="processingStatus" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="card" id="searchCard" style="display: none;">
+          <h2>🔍 Semantic Search</h2>
+          <div class="search-section">
+            <input 
+              type="text" 
+              id="searchInput" 
+              class="search-input" 
+              placeholder="Enter your query (e.g., 'What are transformers in NLP?')"
+            >
+            <button id="searchBtn" class="search-btn">Search Vectors</button>
+            <button id="clearSearchBtn" class="search-btn" style="background: #6c757d;">Clear Results</button>
+          </div>
+          <div id="searchResults" class="search-results"></div>
+        </div>
       </div>
-      <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
 
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-value" id="fileCount">0</div>
-          <div class="stat-label">PDFs Processed</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="chunkCount">0</div>
-          <div class="stat-label">Text Chunks</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="charCount">0</div>
-          <div class="stat-label">Characters</div>
+      <div>
+        <div class="card">
+          <h2>💾 Memory Bank</h2>
+          <div class="memory-bank" id="memoryBank">
+            <div style="text-align: center; opacity: 0.8;">
+              No documents loaded yet
+            </div>
+          </div>
+          <button class="clear-btn" id="clearBtn" style="width: 100%; margin-top: 15px;">
+            Clear All Data
+          </button>
         </div>
       </div>
-    </div>
-
-    <div class="card" id="filesCard" style="display: none;">
-      <h2>Processed Files</h2>
-      <div id="processedFiles"></div>
-      <button class="clear-btn" id="clearBtn">Clear All Data</button>
-    </div>
-
-    <div class="card" id="chunksCard" style="display: none;">
-      <h2>Text Chunks Preview (First 5)</h2>
-      <div id="chunksPreview"></div>
     </div>
   </div>
 
-  <script>
-    // Initialize PDF.js worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  <script type="module">
+    // ============================================
+    // FILE: pdf-processor.js
+    // PDF Extraction & Chunking Module
+    // ============================================
+    
+    const PDFProcessor = (() => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    // Global state
-    const state = {
-      files: [],
-      chunks: [],
-      totalChars: 0
-    };
-
-    // DOM elements
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const fileCount = document.getElementById('fileCount');
-    const chunkCount = document.getElementById('chunkCount');
-    const charCount = document.getElementById('charCount');
-    const processedFiles = document.getElementById('processedFiles');
-    const chunksPreview = document.getElementById('chunksPreview');
-    const filesCard = document.getElementById('filesCard');
-    const chunksCard = document.getElementById('chunksCard');
-    const clearBtn = document.getElementById('clearBtn');
-
-    // Drag and drop handlers
-    dropZone.addEventListener('click', () => fileInput.click());
-
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropZone.classList.add('dragging');
-    });
-
-    dropZone.addEventListener('dragleave', () => {
-      dropZone.classList.remove('dragging');
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('dragging');
-      const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-      if (files.length > 0) handleFiles(files);
-    });
-
-    fileInput.addEventListener('change', (e) => {
-      const files = Array.from(e.target.files);
-      if (files.length > 0) handleFiles(files);
-    });
-
-    clearBtn.addEventListener('click', () => {
-      state.files = [];
-      state.chunks = [];
-      state.totalChars = 0;
-      updateUI();
-      filesCard.style.display = 'none';
-      chunksCard.style.display = 'none';
-    });
-
-    // Main file processing function
-    async function handleFiles(files) {
-      for (const file of files) {
-        await processFile(file);
-      }
-      updateUI();
-    }
-
-    // Extract text from PDF
-    async function extractTextFromPDF(file) {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      
-      let fullText = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        fullText += pageText + '\n';
-      }
-      
-      return fullText;
-    }
-
-    // Chunking function with sliding window
-    function chunkText(text, chunkSize = 500, overlap = 100) {
-      const chunks = [];
-      let start = 0;
-      
-      // Clean up text: normalize whitespace
-      text = text.replace(/\s+/g, ' ').trim();
-      
-      while (start < text.length) {
-        const end = Math.min(start + chunkSize, text.length);
-        const chunk = text.slice(start, end);
+      async function extractTextFromPDF(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         
-        // Only add non-empty chunks
-        if (chunk.trim().length > 0) {
-          chunks.push(chunk.trim());
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(item => item.str).join(' ');
+          fullText += pageText + '\n';
         }
         
-        // Move forward by (chunkSize - overlap)
-        start += chunkSize - overlap;
+        return fullText;
       }
-      
-      return chunks;
-    }
 
-    // Process individual file
-    async function processFile(file) {
-      // Show loading state
-      processedFiles.innerHTML += `
-        <div class="loading">
-          <div class="spinner"></div>
-          Processing ${file.name}...
-        </div>
-      `;
-      filesCard.style.display = 'block';
+      function chunkText(text, chunkSize = 500, overlap = 100) {
+        const chunks = [];
+        let start = 0;
+        text = text.replace(/\s+/g, ' ').trim();
+        
+        while (start < text.length) {
+          const end = Math.min(start + chunkSize, text.length);
+          const chunk = text.slice(start, end);
+          
+          if (chunk.trim().length > 0) {
+            chunks.push(chunk.trim());
+          }
+          
+          start += chunkSize - overlap;
+        }
+        
+        return chunks;
+      }
 
-      try {
-        // Extract text
-        const text = await extractTextFromPDF(file);
+      async function processFile(file) {
+        try {
+          const text = await extractTextFromPDF(file);
+          const chunks = chunkText(text);
+          
+          return {
+            name: file.name,
+            size: file.size,
+            chunks: chunks,
+            charCount: text.length,
+            chunkCount: chunks.length,
+            timestamp: new Date().toISOString()
+          };
+        } catch (error) {
+          console.error('Error processing PDF:', error);
+          throw new Error(`Failed to process ${file.name}: ${error.message}`);
+        }
+      }
+
+      return {
+        extractTextFromPDF,
+        chunkText,
+        processFile
+      };
+    })();
+
+    // ============================================
+    // FILE: embeddings.js
+    // Transformers.js Embeddings Module
+    // ============================================
+    
+    const EmbeddingsEngine = (() => {
+      let pipeline = null;
+      let isReady = false;
+
+      async function initialize() {
+        try {
+          console.log('🔄 Loading embedding model...');
+          const { pipeline: pipelineFn } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+          
+          pipeline = await pipelineFn(
+            'feature-extraction',
+            'Xenova/all-MiniLM-L6-v2'
+          );
+          
+          isReady = true;
+          console.log('✅ Embedding model loaded');
+          return true;
+        } catch (error) {
+          console.error('❌ Failed to load embedding model:', error);
+          throw error;
+        }
+      }
+
+      async function generateEmbedding(text) {
+        if (!isReady) {
+          throw new Error('Embeddings engine not initialized');
+        }
+
+        try {
+          const output = await pipeline(text, {
+            pooling: 'mean',
+            normalize: true
+          });
+          
+          return Array.from(output.data);
+        } catch (error) {
+          console.error('Error generating embedding:', error);
+          throw error;
+        }
+      }
+
+      async function generateBatchEmbeddings(texts, onProgress) {
+        const embeddings = [];
         
-        // Chunk text
-        const chunks = chunkText(text);
+        for (let i = 0; i < texts.length; i++) {
+          const embedding = await generateEmbedding(texts[i]);
+          embeddings.push(embedding);
+          
+          if (onProgress) {
+            onProgress(i + 1, texts.length);
+          }
+        }
         
-        // Store in state
-        const fileData = {
-          name: file.name,
-          size: file.size,
-          chunks: chunks,
-          charCount: text.length,
-          chunkCount: chunks.length
+        return embeddings;
+      }
+
+      function getStatus() {
+        return { isReady, pipeline };
+      }
+
+      return {
+        initialize,
+        generateEmbedding,
+        generateBatchEmbeddings,
+        getStatus
+      };
+    })();
+
+    // ============================================
+    // FILE: vector-store.js
+    // Custom Vector Database Module
+    // ============================================
+    
+    const VectorStore = (() => {
+      const store = [];
+
+      function cosineSimilarity(vecA, vecB) {
+        if (vecA.length !== vecB.length) {
+          throw new Error('Vectors must have the same length');
+        }
+
+        let dotProduct = 0;
+        let normA = 0;
+        let normB = 0;
+
+        for (let i = 0; i < vecA.length; i++) {
+          dotProduct += vecA[i] * vecB[i];
+          normA += vecA[i] * vecA[i];
+          normB += vecB[i] * vecB[i];
+        }
+
+        const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+        
+        if (denominator === 0) {
+          return 0;
+        }
+
+        return dotProduct / denominator;
+      }
+
+      function addVector(text, embedding, source, metadata = {}) {
+        store.push({
+          id: store.length,
+          text,
+          embedding,
+          source,
+          metadata,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      function addVectors(entries) {
+        entries.forEach(entry => {
+          addVector(entry.text, entry.embedding, entry.source, entry.metadata);
+        });
+      }
+
+      async function search(queryEmbedding, topK = 5) {
+        if (store.length === 0) {
+          return [];
+        }
+
+        const results = store.map(item => ({
+          ...item,
+          similarity: cosineSimilarity(queryEmbedding, item.embedding)
+        }));
+
+        results.sort((a, b) => b.similarity - a.similarity);
+
+        return results.slice(0, topK);
+      }
+
+      function clear() {
+        store.length = 0;
+      }
+
+      function getAll() {
+        return [...store];
+      }
+
+      function getStats() {
+        return {
+          count: store.length,
+          sources: [...new Set(store.map(item => item.source))],
+          totalSize: JSON.stringify(store).length
         };
+      }
+
+      return {
+        addVector,
+        addVectors,
+        search,
+        clear,
+        getAll,
+        getStats,
+        cosineSimilarity
+      };
+    })();
+
+    // ============================================
+    // FILE: app.js
+    // Main Application Logic
+    // ============================================
+    
+    const App = (() => {
+      const state = {
+        files: [],
+        isEmbeddingReady: false,
+        isProcessing: false
+      };
+
+      const elements = {
+        dropZone: document.getElementById('dropZone'),
+        fileInput: document.getElementById('fileInput'),
+        fileCount: document.getElementById('fileCount'),
+        chunkCount: document.getElementById('chunkCount'),
+        vectorCount: document.getElementById('vectorCount'),
+        charCount: document.getElementById('charCount'),
+        memoryBank: document.getElementById('memoryBank'),
+        searchCard: document.getElementById('searchCard'),
+        searchInput: document.getElementById('searchInput'),
+        searchBtn: document.getElementById('searchBtn'),
+        clearSearchBtn: document.getElementById('clearSearchBtn'),
+        searchResults: document.getElementById('searchResults'),
+        clearBtn: document.getElementById('clearBtn'),
+        embeddingStatus: document.getElementById('embeddingStatus'),
+        processingStatus: document.getElementById('processingStatus')
+      };
+
+      async function init() {
+        console.log('📚 Initializing PDF Research Assistant...');
         
-        state.files.push(fileData);
-        state.chunks.push(...chunks.map(chunk => ({
-          text: chunk,
-          source: file.name
-        })));
-        state.totalChars += text.length;
+        await initializeEmbeddings();
+        setupEventListeners();
+        updateUI();
         
-      } catch (error) {
-        console.error('Error processing file:', error);
-        alert(`Error processing ${file.name}: ${error.message}`);
+        console.log('✅ Application ready');
       }
-    }
 
-    // Update UI with current state
-    function updateUI() {
-      // Update stats
-      fileCount.textContent = state.files.length;
-      chunkCount.textContent = state.chunks.length;
-      charCount.textContent = state.totalChars.toLocaleString();
-
-      // Update processed files list
-      processedFiles.innerHTML = state.files.map(file => `
-        <div class="file-item">
-          <div class="file-name">${file.name}</div>
-          <div class="file-info">
-            ${file.chunkCount} chunks · ${file.charCount.toLocaleString()} characters
-          </div>
-        </div>
-      `).join('');
-
-      // Update chunks preview (first 5)
-      const previewChunks = state.chunks.slice(0, 5);
-      chunksPreview.innerHTML = previewChunks.map((chunk, idx) => `
-        <div class="chunk-item">
-          <div class="chunk-header">
-            <span>Chunk ${idx + 1}</span>
-            <span>Source: ${chunk.source}</span>
-          </div>
-          <div class="chunk-text" id="chunk-${idx}">
-            ${chunk.text}
-          </div>
-          <span class="expand-btn" onclick="toggleChunk(${idx})">Show more...</span>
-        </div>
-      `).join('');
-
-      // Show/hide cards
-      if (state.files.length > 0) {
-        filesCard.style.display = 'block';
-        chunksCard.style.display = 'block';
+      async function initializeEmbeddings() {
+        try {
+          await EmbeddingsEngine.initialize();
+          state.isEmbeddingReady = true;
+          elements.embeddingStatus.textContent = '✓ Embeddings Ready';
+          elements.embeddingStatus.classList.remove('status-loading');
+          elements.embeddingStatus.classList.add('status-ready');
+        } catch (error) {
+          elements.embeddingStatus.textContent = '✗ Embeddings Failed';
+          elements.embeddingStatus.style.background = '#dc3545';
+          alert('Failed to load embeddings model. Please refresh the page.');
+        }
       }
-    }
 
-    // Toggle chunk expansion
-    function toggleChunk(idx) {
-      const chunkEl = document.getElementById(`chunk-${idx}`);
-      const btn = chunkEl.nextElementSibling;
-      
-      if (chunkEl.classList.contains('expanded')) {
-        chunkEl.classList.remove('expanded');
-        btn.textContent = 'Show more...';
-      } else {
-        chunkEl.classList.add('expanded');
-        btn.textContent = 'Show less';
+      function setupEventListeners() {
+        elements.dropZone.addEventListener('click', () => {
+          if (!state.isProcessing) elements.fileInput.click();
+        });
+
+        elements.dropZone.addEventListener('dragover', handleDragOver);
+        elements.dropZone.addEventListener('dragleave', handleDragLeave);
+        elements.dropZone.addEventListener('drop', handleDrop);
+        elements.fileInput.addEventListener('change', handleFileInput);
+        elements.searchBtn.addEventListener('click', handleSearch);
+        elements.clearSearchBtn.addEventListener('click', clearSearchResults);
+        elements.clearBtn.addEventListener('click', clearAllData);
+
+        elements.searchInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') handleSearch();
+        });
       }
-    }
 
-    // Make toggleChunk available globally
-    window.toggleChunk = toggleChunk;
+      function handleDragOver(e) {
+        e.preventDefault();
+        if (!state.isProcessing) {
+          elements.dropZone.classList.add('dragging');
+        }
+      }
+
+      function handleDragLeave() {
+        elements.dropZone.classList.remove('dragging');
+      }
+
+      function handleDrop(e) {
+        e.preventDefault();
+        elements.dropZone.classList.remove('dragging');
+        
+        if (state.isProcessing) return;
+
+        const files = Array.from(e.dataTransfer.files)
+          .filter(f => f.type === 'application/pdf');
+        
+        if (files.length > 0) {
+          handleFiles(files);
+        }
+      }
+
+      function handleFileInput(e) {
+        const files = Array.from(e.target.files);
+        if (files.length > 0 && !state.isProcessing) {
+          handleFiles(files);
+        }
+      }
+
+      async function handleFiles(files) {
+        if (!state.isEmbeddingReady) {
+          alert('Please wait for embeddings model to load');
+          return;
+        }
+
+        state.isProcessing = true;
+        elements.dropZone.classList.add('disabled');
+
+        for (const file of files) {
+          await processAndEmbedFile(file);
+        }
+
+        state.isProcessing = false;
+        elements.dropZone.classList.remove('disabled');
+        updateUI();
+      }
+
+      async function processAndEmbedFile(file) {
+        try {
+          showProcessingStatus(`Processing ${file.name}...`, 0);
+
+          const fileData = await PDFProcessor.processFile(file);
+          
+          showProcessingStatus(`Generating embeddings for ${file.name}...`, 0);
+
+          const embeddings = await EmbeddingsEngine.generateBatchEmbeddings(
+            fileData.chunks,
+            (current, total) => {
+              const progress = (current / total) * 100;
+              showProcessingStatus(
+                `Embedding ${file.name}: ${current}/${total} chunks`,
+                progress
+              );
+            }
+          );
+
+          const vectorEntries = fileData.chunks.map((chunk, idx) => ({
+            text: chunk,
+            embedding: embeddings[idx],
+            source: file.name
+          }));
+
+          VectorStore.addVectors(vectorEntries);
+
+          state.files.push(fileData);
+
+          console.log(`✅ Processed and embedded: ${file.name}`);
+          
+        } catch (error) {
+          console.error('Error:', error);
+          alert(`Error processing ${file.name}: ${error.message}`);
+        }
+      }
+
+      function showProcessingStatus(message, progress) {
+        elements.processingStatus.innerHTML = `
+          <div class="loading">
+            <div>${message}</div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${progress}%"></div>
+            </div>
+          </div>
+        `;
+      }
+
+      async function handleSearch() {
+        const query = elements.searchInput.value.trim();
+        
+        if (!query) {
+          alert('Please enter a search query');
+          return;
+        }
+
+        if (VectorStore.getStats().count === 0) {
+          alert('Please upload and process PDFs first');
+          return;
+        }
+
+        try {
+          elements.searchBtn.disabled = true;
+          elements.searchBtn.textContent = 'Searching...';
+
+          const queryEmbedding = await EmbeddingsEngine.generateEmbedding(query);
+          const results = await VectorStore.search(queryEmbedding, 5);
+
+          displaySearchResults(results, query);
+
+        } catch (error) {
+          console.error('Search error:', error);
+          alert('Search failed: ' + error.message);
+        } finally {
+          elements.searchBtn.disabled = false;
+          elements.searchBtn.textContent = 'Search Vectors';
+        }
+      }
+
+      function displaySearchResults(results, query) {
+        if (results.length === 0) {
+          elements.searchResults.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: #666;">
+              No results found for "${query}"
+            </div>
+          `;
+          return;
+        }
+
+        elements.searchResults.innerHTML = `
+          <h3 style="margin-bottom: 15px;">Results for: "${query}"</h3>
+          ${results.map((result, idx) => `
+            <div class="result-item">
+              <div class="result-header">
+                <span class="result-source">📄 ${result.source}</span>
+                <span class="result-score">${(result.similarity * 100).toFixed(1)}% match</span>
+              </div>
+              <div class="result-text">${escapeHtml(result.text)}</div>
+            </div>
+          `).join('')}
+        `;
+      }
+
+      function clearSearchResults() {
+        elements.searchResults.innerHTML = '';
+        elements.searchInput.value = '';
+      }
+
+      function updateUI() {
+        const stats = VectorStore.getStats();
+        const totalChars = state.files.reduce((sum, f) => sum + f.charCount, 0);
+
+        elements.fileCount.textContent = state.files.length;
+        elements.chunkCount.textContent = state.files.reduce((sum, f) => sum + f.chunkCount, 0);
+        elements.vectorCount.textContent = stats.count;
+        elements.charCount.textContent = totalChars.toLocaleString();
+
+        updateMemoryBank(stats);
+
+        if (stats.count > 0) {
+          elements.searchCard.style.display = 'block';
+        }
+
+        elements.processingStatus.innerHTML = '';
+      }
+
+      function updateMemoryBank(stats) {
+        if (stats.count === 0) {
+          elements.memoryBank.innerHTML = `
+            <div style="text-align: center; opacity: 0.8;">
+              No documents loaded yet
+            </div>
+          `;
+          return;
+        }
+
+        const sizeKB = (stats.totalSize / 1024).toFixed(2);
+        
+        elements.memoryBank.innerHTML = `
+          <div class="memory-item">
+            <strong>Total Vectors:</strong> ${stats.count}
+          </div>
+          <div class="memory-item">
+            <strong>Documents:</strong> ${stats.sources.length}
+          </div>
+          <div class="memory-item">
+            <strong>Storage Size:</strong> ${sizeKB} KB
+          </div>
+          <div class="memory-item">
+            <strong>Sources:</strong><br>
+            ${stats.sources.map(s => `• ${s}`).join('<br>')}
+          </div>
+        `;
+      }
+
+      function clearAllData() {
+        if (confirm('Are you sure you want to clear all data?')) {
+          VectorStore.clear();
+          state.files = [];
+          clearSearchResults();
+          updateUI();
+          elements.searchCard.style.display = 'none';
+          console.log('🗑️ All data cleared');
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      return { init };
+    })();
+
+    App.init();
   </script>
 </body>
 </html>
