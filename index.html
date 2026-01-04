@@ -1,51 +1,491 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Local RAG – PDF Ingestion</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Research Assistant - Step 1.1</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f4;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
       padding: 20px;
+      color: #333;
     }
 
-    #drop-zone {
-      border: 2px dashed #888;
-      border-radius: 10px;
-      padding: 40px;
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
       text-align: center;
+      color: white;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      font-size: 1.1em;
+      opacity: 0.9;
+    }
+
+    .card {
       background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      margin-bottom: 20px;
+    }
+
+    .drop-zone {
+      border: 3px dashed #667eea;
+      border-radius: 12px;
+      padding: 60px 20px;
+      text-align: center;
       cursor: pointer;
+      transition: all 0.3s ease;
+      background: #f8f9ff;
     }
 
-    #drop-zone.dragover {
-      background: #e0f7fa;
-      border-color: #00796b;
+    .drop-zone:hover {
+      border-color: #764ba2;
+      background: #f0f2ff;
     }
 
-    #output {
+    .drop-zone.dragging {
+      border-color: #764ba2;
+      background: #e8ebff;
+      transform: scale(1.02);
+    }
+
+    .drop-zone-icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+    }
+
+    .drop-zone-text {
+      font-size: 1.2em;
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+
+    .drop-zone-subtext {
+      color: #666;
+      font-size: 0.9em;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
       margin-top: 20px;
-      white-space: pre-wrap;
-      background: #fff;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2em;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .stat-label {
+      font-size: 0.9em;
+      opacity: 0.9;
+    }
+
+    .processed-files {
+      margin-top: 20px;
+    }
+
+    .file-item {
+      background: #f8f9ff;
+      border-left: 4px solid #667eea;
       padding: 15px;
-      border-radius: 5px;
-      max-height: 300px;
-      overflow-y: auto;
+      margin-bottom: 10px;
+      border-radius: 6px;
+    }
+
+    .file-name {
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 5px;
+    }
+
+    .file-info {
+      font-size: 0.9em;
+      color: #666;
+    }
+
+    .chunks-preview {
+      margin-top: 20px;
+    }
+
+    .chunk-item {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      font-size: 0.9em;
+    }
+
+    .chunk-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      color: #667eea;
+      font-weight: bold;
+      font-size: 0.85em;
+    }
+
+    .chunk-text {
+      color: #333;
+      line-height: 1.6;
+      max-height: 100px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .chunk-text.expanded {
+      max-height: none;
+    }
+
+    .chunk-text::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 30px;
+      background: linear-gradient(transparent, white);
+    }
+
+    .chunk-text.expanded::after {
+      display: none;
+    }
+
+    .expand-btn {
+      color: #667eea;
+      cursor: pointer;
+      font-size: 0.85em;
+      margin-top: 5px;
+      display: inline-block;
+    }
+
+    .expand-btn:hover {
+      text-decoration: underline;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #667eea;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .clear-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1em;
+      margin-top: 15px;
+      transition: background 0.3s ease;
+    }
+
+    .clear-btn:hover {
+      background: #c82333;
+    }
+
+    h2 {
+      color: #333;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 10px;
     }
   </style>
 </head>
 <body>
+  <div class="container">
+    <div class="header">
+      <h1>📚 AI Research Assistant</h1>
+      <p>Step 1.1: PDF Extraction & Chunking</p>
+    </div>
 
-  <h2>📄 PDF Upload & Text Extraction</h2>
+    <div class="card">
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">Drop PDF files here or click to browse</div>
+        <div class="drop-zone-subtext">Supports multiple PDFs</div>
+      </div>
+      <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
 
-  <div id="drop-zone">Drag & Drop PDF files here</div>
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-value" id="fileCount">0</div>
+          <div class="stat-label">PDFs Processed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="chunkCount">0</div>
+          <div class="stat-label">Text Chunks</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="charCount">0</div>
+          <div class="stat-label">Characters</div>
+        </div>
+      </div>
+    </div>
 
-  <div id="output"></div>
+    <div class="card" id="filesCard" style="display: none;">
+      <h2>Processed Files</h2>
+      <div id="processedFiles"></div>
+      <button class="clear-btn" id="clearBtn">Clear All Data</button>
+    </div>
 
-  <!-- pdf.js CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers/dist/transformers.min.js"></script>
-  <script src="app.js"></script>
+    <div class="card" id="chunksCard" style="display: none;">
+      <h2>Text Chunks Preview (First 5)</h2>
+      <div id="chunksPreview"></div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // Global state
+    const state = {
+      files: [],
+      chunks: [],
+      totalChars: 0
+    };
+
+    // DOM elements
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileCount = document.getElementById('fileCount');
+    const chunkCount = document.getElementById('chunkCount');
+    const charCount = document.getElementById('charCount');
+    const processedFiles = document.getElementById('processedFiles');
+    const chunksPreview = document.getElementById('chunksPreview');
+    const filesCard = document.getElementById('filesCard');
+    const chunksCard = document.getElementById('chunksCard');
+    const clearBtn = document.getElementById('clearBtn');
+
+    // Drag and drop handlers
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragging');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragging');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragging');
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+      if (files.length > 0) handleFiles(files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length > 0) handleFiles(files);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      state.files = [];
+      state.chunks = [];
+      state.totalChars = 0;
+      updateUI();
+      filesCard.style.display = 'none';
+      chunksCard.style.display = 'none';
+    });
+
+    // Main file processing function
+    async function handleFiles(files) {
+      for (const file of files) {
+        await processFile(file);
+      }
+      updateUI();
+    }
+
+    // Extract text from PDF
+    async function extractTextFromPDF(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+      
+      return fullText;
+    }
+
+    // Chunking function with sliding window
+    function chunkText(text, chunkSize = 500, overlap = 100) {
+      const chunks = [];
+      let start = 0;
+      
+      // Clean up text: normalize whitespace
+      text = text.replace(/\s+/g, ' ').trim();
+      
+      while (start < text.length) {
+        const end = Math.min(start + chunkSize, text.length);
+        const chunk = text.slice(start, end);
+        
+        // Only add non-empty chunks
+        if (chunk.trim().length > 0) {
+          chunks.push(chunk.trim());
+        }
+        
+        // Move forward by (chunkSize - overlap)
+        start += chunkSize - overlap;
+      }
+      
+      return chunks;
+    }
+
+    // Process individual file
+    async function processFile(file) {
+      // Show loading state
+      processedFiles.innerHTML += `
+        <div class="loading">
+          <div class="spinner"></div>
+          Processing ${file.name}...
+        </div>
+      `;
+      filesCard.style.display = 'block';
+
+      try {
+        // Extract text
+        const text = await extractTextFromPDF(file);
+        
+        // Chunk text
+        const chunks = chunkText(text);
+        
+        // Store in state
+        const fileData = {
+          name: file.name,
+          size: file.size,
+          chunks: chunks,
+          charCount: text.length,
+          chunkCount: chunks.length
+        };
+        
+        state.files.push(fileData);
+        state.chunks.push(...chunks.map(chunk => ({
+          text: chunk,
+          source: file.name
+        })));
+        state.totalChars += text.length;
+        
+      } catch (error) {
+        console.error('Error processing file:', error);
+        alert(`Error processing ${file.name}: ${error.message}`);
+      }
+    }
+
+    // Update UI with current state
+    function updateUI() {
+      // Update stats
+      fileCount.textContent = state.files.length;
+      chunkCount.textContent = state.chunks.length;
+      charCount.textContent = state.totalChars.toLocaleString();
+
+      // Update processed files list
+      processedFiles.innerHTML = state.files.map(file => `
+        <div class="file-item">
+          <div class="file-name">${file.name}</div>
+          <div class="file-info">
+            ${file.chunkCount} chunks · ${file.charCount.toLocaleString()} characters
+          </div>
+        </div>
+      `).join('');
+
+      // Update chunks preview (first 5)
+      const previewChunks = state.chunks.slice(0, 5);
+      chunksPreview.innerHTML = previewChunks.map((chunk, idx) => `
+        <div class="chunk-item">
+          <div class="chunk-header">
+            <span>Chunk ${idx + 1}</span>
+            <span>Source: ${chunk.source}</span>
+          </div>
+          <div class="chunk-text" id="chunk-${idx}">
+            ${chunk.text}
+          </div>
+          <span class="expand-btn" onclick="toggleChunk(${idx})">Show more...</span>
+        </div>
+      `).join('');
+
+      // Show/hide cards
+      if (state.files.length > 0) {
+        filesCard.style.display = 'block';
+        chunksCard.style.display = 'block';
+      }
+    }
+
+    // Toggle chunk expansion
+    function toggleChunk(idx) {
+      const chunkEl = document.getElementById(`chunk-${idx}`);
+      const btn = chunkEl.nextElementSibling;
+      
+      if (chunkEl.classList.contains('expanded')) {
+        chunkEl.classList.remove('expanded');
+        btn.textContent = 'Show more...';
+      } else {
+        chunkEl.classList.add('expanded');
+        btn.textContent = 'Show less';
+      }
+    }
+
+    // Make toggleChunk available globally
+    window.toggleChunk = toggleChunk;
+  </script>
 </body>
 </html>
