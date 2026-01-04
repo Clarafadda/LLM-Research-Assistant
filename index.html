@@ -246,54 +246,55 @@
     // Vector Store Module
     // ============================================
     const VectorStore = (() => {
-      const store = [];
+    let store = [];
+    let nextId = 0;
 
-      function cosineSimilarity(vecA, vecB) {
-        let dotProduct = 0, normA = 0, normB = 0;
-        for (let i = 0; i < vecA.length; i++) {
-          dotProduct += vecA[i] * vecB[i];
-          normA += vecA[i] * vecA[i];
-          normB += vecB[i] * vecB[i];
-        }
-        const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-        return denominator === 0 ? 0 : dotProduct / denominator;
+    function cosineSimilarity(vecA, vecB) {
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < vecA.length; i++) {
+        dot += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
       }
+      return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
+    }
 
-      function addVectors(entries) {
-        entries.forEach(entry => {
-          store.push({
-            id: store.length,
-            text: entry.text,
-            embedding: entry.embedding,
-            source: entry.source,
-            timestamp: new Date().toISOString()
-          });
+    function addVectors(entries) {
+      entries.forEach(entry => {
+        store.push({
+          id: nextId++,
+          text: entry.text,
+          embedding: entry.embedding,
+          source: entry.source
         });
-      }
+      });
+    }
 
-      async function search(queryEmbedding, topK = 5) {
-        if (store.length === 0) return [];
-        const results = store.map(item => ({
-          ...item,
-          similarity: cosineSimilarity(queryEmbedding, item.embedding)
-        }));
-        results.sort((a, b) => b.similarity - a.similarity);
-        return results.slice(0, topK);
-      }
+    function removeBySource(source) {
+      store = store.filter(v => v.source !== source);
+    }
 
-      function clear() {
-        store.length = 0;
-      }
+    async function search(queryEmbedding, topK = 5) {
+      return store
+        .map(v => ({ ...v, similarity: cosineSimilarity(queryEmbedding, v.embedding) }))
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, topK);
+    }
 
-      function getStats() {
-        return {
-          count: store.length,
-          sources: [...new Set(store.map(item => item.source))]
-        };
-      }
+    function getStats() {
+      return {
+        count: store.length,
+        sources: [...new Set(store.map(v => v.source))]
+      };
+    }
 
-      return { addVectors, search, clear, getStats };
-    })();
+    function clear() {
+      store = [];
+      nextId = 0;
+    }
+
+    return { addVectors, search, removeBySource, getStats, clear };
+  })();
 
     // ============================================
     // LLM Engine Module (WebLLM)
@@ -369,13 +370,23 @@
         inputHint: document.getElementById('inputHint')
       };
 
-      const SYSTEM_PROMPT = `You are an expert Academic Research Assistant. Your role is to help users understand research papers by:
-1. Analyzing the provided document excerpts carefully
-2. Answering questions based ONLY on the given context
-3. Being precise and citing which documents you're referencing
-4. Admitting when information is not in the provided context
+      const SYSTEM_PROMPT = `
+      You are an Academic Research Assistant.
 
-Always maintain an academic, professional tone.`;
+      RULES:
+      - Answer ONLY using the provided document context.
+      - If the answer is not explicitly in the context, say:
+        "The provided documents do not contain this information."
+      - Cite the document names in your answer.
+      - Be concise, factual, and precise.
+      - Do NOT use external knowledge.
+
+      OUTPUT FORMAT:
+      - Short answer paragraph
+      - Bullet points if relevant
+      - Cite sources inline (Author / Paper name)
+      `;
+
 
       async function init() {
         console.log('📚 Initializing Application...');
@@ -529,7 +540,8 @@ Always maintain an academic, professional tone.`;
           // Retrieve relevant context if documents are available
           if (VectorStore.getStats().count > 0) {
             const queryEmbedding = await EmbeddingsEngine.generateEmbedding(query);
-            const results = await VectorStore.search(queryEmbedding, 3);
+            const results = (await VectorStore.search(queryEmbedding, 8)).filter(r => r.similarity > 0.3);
+
             
             citations = results.map(r => ({
               source: r.source,
@@ -537,20 +549,34 @@ Always maintain an academic, professional tone.`;
               similarity: r.similarity
             }));
 
-            context = results.map((r, i) => 
-              `[Document ${i+1}: ${r.source}]\n${r.text}`
-            ).join('\n\n');
+            context = results.map((r, i) => `
+            SOURCE: ${r.source}
+            SIMILARITY: ${(r.similarity * 100).toFixed(1)}%
+            CONTENT:
+            ${r.text}
+            `).join('\n\n---\n\n');
           }
 
           // Build messages array with chat history
           const messages = [
             { role: 'system', content: SYSTEM_PROMPT },
             ...state.chatHistory,
-            { 
-              role: 'user', 
-              content: context ? 
-                `Context from documents:\n${context}\n\nUser question: ${query}` : 
-                query 
+            {
+              role: 'user',
+              content: context
+                ? `
+          DOCUMENT CONTEXT:
+          ${context}
+
+          QUESTION:
+          ${query}
+
+          INSTRUCTIONS:
+          - Answer ONLY using the document context above
+          - Cite the document names explicitly
+          - If the answer is not in the documents, say so clearly
+          `
+                : query
             }
           ];
 
@@ -637,19 +663,49 @@ Always maintain an academic, professional tone.`;
         elements.fileCount.textContent = state.files.length;
         elements.vectorCount.textContent = stats.count;
 
-        if (stats.count > 0) {
-          elements.memoryBank.innerHTML = `
-            <div class="space-y-2">
-              <div class="text-sm"><strong>Vectors:</strong> ${stats.count}</div>
-              <div class="text-sm"><strong>Documents:</strong></div>
-              ${stats.sources.map(s => `<div class="text-xs opacity-90">• ${s}</div>`).join('')}
-            </div>
-          `;
-          elements.inputHint.textContent = 'Ask questions about your documents';
+        if (stats.sources.length === 0) {
+          elements.memoryBank.innerHTML =
+            `<div class="text-center opacity-80 text-sm">No documents loaded</div>`;
+          return;
         }
 
-        elements.processingStatus.innerHTML = '';
+        elements.memoryBank.innerHTML = `
+          <div class="space-y-2">
+            ${stats.sources.map(source => `
+              <div class="flex items-center justify-between bg-white/10 rounded px-2 py-1">
+                <span class="text-xs truncate">📄 ${source}</span>
+                <button 
+                  class="text-red-300 hover:text-red-500 text-sm"
+                  onclick="window.removeDocument('${source}')"
+                  title="Delete document"
+                >
+                  🗑️
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        `;
       }
+
+      window.removeDocument = function (source) {
+        if (!confirm(`Remove "${source}" and all its vectors?`)) return;
+
+        VectorStore.removeBySource(source);
+        state.files = state.files.filter(f => f.name !== source);
+
+        // Remove citations & reset chat (optional but cleaner)
+        state.chatHistory = [];
+        elements.chatContainer.innerHTML = `
+          <div class="text-center text-gray-500 py-8">
+            <div class="text-4xl mb-2">🤖</div>
+            <p>Document removed. Ask another question.</p>
+          </div>
+        `;
+
+        updateUI();
+      };
+
+
 
       function clearAllData() {
         if (confirm('Clear all data and chat history?')) {
