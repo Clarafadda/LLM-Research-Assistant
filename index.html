@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Local RAG – PDF Ingestion</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 20px;
+    }
+
+    #drop-zone {
+      border: 2px dashed #888;
+      border-radius: 10px;
+      padding: 40px;
+      text-align: center;
+      background: white;
+      cursor: pointer;
+    }
+
+    #drop-zone.dragover {
+      background: #e0f7fa;
+      border-color: #00796b;
+    }
+
+    #output {
+      margin-top: 20px;
+      white-space: pre-wrap;
+      background: #fff;
+      padding: 15px;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>📄 PDF Upload & Text Extraction</h2>
+
+  <div id="drop-zone">Drag & Drop PDF files here</div>
+
+  <div id="output"></div>
+
+  <!-- pdf.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers/dist/transformers.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
