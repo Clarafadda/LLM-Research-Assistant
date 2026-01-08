@@ -1,109 +1,45 @@
-async function processPDF(file) {
+export const PDFProcessor = {
+  async extractTextFromPDF(file) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  
-    let fullText = "";
-  
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const content = await page.getTextContent();
-  
-      const pageText = content.items.map(item => item.str).join(" ");
-      fullText += pageText + "\n";
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      fullText += textContent.items.map(item => item.str).join(' ') + '\n';
     }
-  
-    const chunks = chunkText(fullText);
-  
-    state.documents.push({
-      source: file.name,
-      text: fullText,
-      chunks
-    });
-  
-    renderStatus(file.name, chunks.length);
-  }
+    return fullText;
+  },
 
-  
-  async function processPDF(file) {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  
-    let fullText = "";
-  
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const content = await page.getTextContent();
-      fullText += content.items.map(item => item.str).join(" ") + "\n";
+  recursiveChunkText(text, chunkSize = 800, overlap = 100) {
+    const chunks = [];
+    text = text.replace(/\s+/g, ' ').trim();
+    let start = 0;
+    while (start < text.length) {
+      let end = start + chunkSize;
+      if (end >= text.length) {
+        chunks.push(text.slice(start));
+        break;
+      }
+      let breakPoint = end;
+      // Try to find a period or space to break naturally
+      const slice = text.slice(Math.max(start, end - 200), end);
+      const lastPeriod = slice.lastIndexOf('. ');
+      if (lastPeriod !== -1) breakPoint = Math.max(start, end - 200) + lastPeriod + 1;
+      else {
+        const lastSpace = slice.lastIndexOf(' ');
+        if (lastSpace !== -1) breakPoint = Math.max(start, end - 200) + lastSpace;
+      }
+      chunks.push(text.slice(start, breakPoint).trim());
+      start = breakPoint - overlap;
     }
-  
-    const chunks = chunkText(fullText);
-  
-    await initEmbedder();
-  
-    for (const chunk of chunks) {
-      const embedding = await embedText(chunk);
-  
-      state.vectorStore.push({
-        text: chunk,
-        embedding,
-        source: file.name
-      });
-    }
-  
-    renderStatus(file.name, chunks.length);
-  }
+    return chunks.filter(c => c.length > 50);
+  },
 
-  async function embedText(text) {
-    const output = await state.embedder(text, {
-      pooling: "mean",
-      normalize: true
-    });
-  
-    return output.data;
+  async processFile(file) {
+    const text = await this.extractTextFromPDF(file);
+    const chunks = this.recursiveChunkText(text);
+    return { name: file.name, chunks, chunkCount: chunks.length };
   }
-
-  function cosineSimilarity(vecA, vecB) {
-    let dot = 0.0;
-    let normA = 0.0;
-    let normB = 0.0;
-  
-    for (let i = 0; i < vecA.length; i++) {
-      dot += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-  
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
-  async function search(query, topK = 3) {
-    await initEmbedder();
-  
-    const queryEmbedding = await embedText(query);
-  
-    const scores = state.vectorStore.map(item => ({
-      text: item.text,
-      source: item.source,
-      score: cosineSimilarity(queryEmbedding, item.embedding)
-    }));
-  
-    scores.sort((a, b) => b.score - a.score);
-  
-    console.log("🔍 Search results:", scores.slice(0, topK));
-  }
-
-  async function search(query, topK = 3) {
-    await initEmbedder();
-  
-    const queryEmbedding = await embedText(query);
-  
-    const scores = state.vectorStore.map(item => ({
-      text: item.text,
-      source: item.source,
-      score: cosineSimilarity(queryEmbedding, item.embedding)
-    }));
-  
-    scores.sort((a, b) => b.score - a.score);
-  
-    console.log("🔍 Search results:", scores.slice(0, topK));
-  }
-  
+};

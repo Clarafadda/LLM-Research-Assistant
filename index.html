@@ -2,784 +2,162 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AI Research Assistant</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.46/lib/index.min.js"></script>
+  
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+
   <style>
-    /* Prevent the whole page from scrolling */
-    html, body { height: 100%; overflow: hidden; }
-    
-    /* Custom Scrollbar for a "Gemini" look */
-    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    /* 100dvh prevents the "shifting" layout on mobile browsers when address bars appear/disappear */
+    html, body { 
+      height: 100dvh; 
+      overflow: hidden; 
+      background-color: #f8fafc;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+    
+    /* Smooth transition for mobile sidebar */
+    #sidebar { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
   </style>
 </head>
-<body class="bg-[#f0f2f5] flex flex-col font-sans">
+<body class="flex flex-col font-sans text-gray-900">
 
-  <nav class="h-14 border-b bg-white flex items-center justify-between px-6 flex-shrink-0 z-10">
-    <div class="flex items-center gap-2">
-      <div class="bg-indigo-600 p-1.5 rounded-lg text-white">
-        <i class="fas fa-microchip"></i>
+  <nav class="h-14 border-b bg-white flex items-center justify-between px-4 lg:px-6 flex-shrink-0 z-30">
+    <div class="flex items-center gap-3">
+      <button id="mobileMenuBtn" class="lg:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+        <i class="fas fa-bars"></i>
+      </button>
+      
+      <div class="flex items-center gap-2">
+        <div class="bg-indigo-600 p-1.5 rounded-lg text-white">
+          <i class="fas fa-microchip text-sm"></i>
+        </div>
+        <h1 class="font-bold text-gray-800 tracking-tight hidden xs:block">Research Assistant</h1>
       </div>
-      <h1 class="font-bold text-gray-800 text-lg tracking-tight">Research Assistant</h1>
     </div>
-    <div class="flex gap-3">
-      <div id="embeddingStatus" class="text-[11px] px-2 py-1 rounded bg-orange-100 text-orange-700 font-medium">Embeddings: Loading</div>
-      <div id="llmStatus" class="text-[11px] px-2 py-1 rounded bg-orange-100 text-orange-700 font-medium">LLM: Loading</div>
+
+    <div class="flex gap-2">
+      <div id="embeddingStatus" class="text-[10px] px-2 py-1 rounded bg-gray-100 text-gray-500 font-medium whitespace-nowrap">
+        Embeddings: Init
+      </div>
+      <div id="llmStatus" class="text-[10px] px-2 py-1 rounded bg-gray-100 text-gray-500 font-medium whitespace-nowrap">
+        LLM: Init
+      </div>
     </div>
   </nav>
 
-  <main class="flex-1 flex overflow-hidden min-h-0">
+  <main class="flex-1 flex overflow-hidden relative">
     
-    <aside class="w-80 bg-white border-r flex flex-col flex-shrink-0">
-      <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+    <div id="sidebarOverlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden lg:hidden"></div>
+
+    <aside id="sidebar" class="fixed inset-y-0 left-0 w-[280px] bg-white border-r z-50 transform -translate-x-full lg:relative lg:translate-x-0 lg:w-80 flex flex-col">
+      
+      <div class="p-4 flex items-center justify-between lg:hidden border-b">
+        <span class="font-bold text-gray-700">Settings</span>
+        <button id="closeSidebarBtn" class="p-2 text-gray-400"><i class="fas fa-times"></i></button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-8">
         
-        <div>
-          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Model Configuration</h3>
+        <section>
+          <label class="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 block">Inference Engine</label>
           <div class="space-y-4">
-            <select id="modelSelect" class="w-full text-sm border border-gray-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none">
-              <option value="Phi-3-mini-4k-instruct-q4f16_1-MLC">Phi-3 Mini (Balanced)</option>
-              <option value="Llama-3-8B-Instruct-q4f16_1-MLC">Llama-3 8B (Smart/Slow)</option>
+            <select id="modelSelect" class="w-full text-sm border border-gray-200 rounded-xl p-2.5 bg-gray-50 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+              <option value="Phi-3-mini-4k-instruct-q4f16_1-MLC">Phi-3 Mini (Fast)</option>
+              <option value="Llama-3-8B-Instruct-q4f16_1-MLC">Llama-3 8B (Smart)</option>
             </select>
             
-            <div class="space-y-1">
-              <div class="flex justify-between text-xs font-medium text-gray-600">
+            <div class="space-y-2">
+              <div class="flex justify-between text-xs font-semibold text-gray-600">
                 <span>Creativity</span>
                 <span id="tempValue" class="text-indigo-600">0.3</span>
               </div>
-              <input type="range" id="tempSlider" min="0" max="1" step="0.1" value="0.3" class="w-full accent-indigo-600">
+              <input type="range" id="tempSlider" min="0" max="1" step="0.1" value="0.3" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
             </div>
 
-            <div class="space-y-1">
-              <div class="flex justify-between text-xs font-medium text-gray-600">
-                <span>Max Response Length</span>
-              </div>
-              <input type="number" id="tokenInput" value="1024" min="128" max="4096" step="128" class="w-full text-sm border border-gray-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none">
+            <div class="space-y-2">
+              <label class="text-xs font-semibold text-gray-600">Max Tokens</label>
+              <input type="number" id="tokenInput" value="1024" class="w-full text-sm border border-gray-200 rounded-lg p-2 bg-gray-50 outline-none">
             </div>
           </div>
-        </div>
+        </section>
 
-        <hr class="border-gray-100">
-
-        <div>
-          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Knowledge Base</h3>
-          <div id="dropZone" class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-indigo-400 hover:bg-indigo-50 transition-all cursor-pointer">
-            <i class="fas fa-cloud-upload-alt text-2xl text-gray-300 mb-2"></i>
-            <p class="text-xs text-gray-500 font-medium">Drop PDFs to analyze</p>
+        <section>
+          <label class="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 block">Knowledge Base</label>
+          <div id="dropZone" class="group border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center hover:border-indigo-400 hover:bg-indigo-50 transition-all cursor-pointer">
+            <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+              <i class="fas fa-file-upload text-gray-400 group-hover:text-indigo-600"></i>
+            </div>
+            <p class="text-xs font-bold text-gray-600">Click to upload PDF</p>
+            <p class="text-[10px] text-gray-400 mt-1">Files are processed locally</p>
           </div>
           <input type="file" id="fileInput" class="hidden" multiple accept=".pdf">
-          <div id="processingStatus" class="mt-2"></div>
-        </div>
+          <div id="processingStatus" class="mt-3"></div>
+        </section>
 
-        <div>
-          <div class="flex justify-between items-center mb-3">
-            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Memory Bank</h3>
-            <span id="totalVectors" class="text-[10px] text-gray-400">0 vectors</span>
+        <section>
+          <div class="flex items-center justify-between mb-3">
+            <label class="text-[11px] font-bold text-gray-400 uppercase tracking-widest block">Loaded Documents</label>
+            <span id="totalVectors" class="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded-full text-gray-500">0 Vectors</span>
           </div>
-          <div id="memoryBank" class="bg-gray-50 rounded-lg p-3 min-h-[100px] text-[11px] text-gray-500 italic custom-scrollbar overflow-y-auto max-h-48">
-            No data ingested yet.
-          </div>
-        </div>
+          <div id="memoryBank" class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+            </div>
+        </section>
       </div>
 
-      <div class="p-4 border-t">
-        <button id="clearBtn" class="w-full py-2 text-xs font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-          <i class="fas fa-trash-alt mr-2"></i> Clear Documents
+      <div class="p-4 border-t bg-gray-50/50">
+        <button id="clearBtn" class="w-full py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-100">
+          <i class="fas fa-trash-alt mr-2"></i> Clear All Data
         </button>
       </div>
     </aside>
 
     <section class="flex-1 flex flex-col bg-white min-w-0">
       
-      <div id="chatContainer" class="flex-1 overflow-y-auto custom-scrollbar p-6 lg:px-24 space-y-6 bg-[#fcfcfc]">
-        <div class="flex flex-col items-center justify-center h-full text-center text-gray-400">
-          <div class="bg-indigo-50 text-indigo-500 w-16 h-16 rounded-full flex items-center justify-center text-2xl mb-4">
-            <i class="fas fa-robot"></i>
+      <div id="chatContainer" class="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8 space-y-6 scroll-smooth">
+        <div class="flex flex-col items-center justify-center h-full text-center py-20">
+          <div class="w-16 h-16 bg-indigo-50 text-indigo-500 rounded-3xl flex items-center justify-center text-2xl mb-6 rotate-3">
+            <i class="fas fa-comment-dots"></i>
           </div>
-          <h2 class="text-lg font-semibold text-gray-700">How can I help you today?</h2>
-          <p class="text-sm max-w-xs mt-2">Upload your research papers to start a deep-dive conversation.</p>
+          <h2 class="text-xl font-bold text-gray-800">Local Research AI</h2>
+          <p class="text-sm text-gray-400 max-w-sm mt-2 leading-relaxed">
+            Your documents never leave your device. Upload PDFs and ask questions to see the power of Local RAG.
+          </p>
         </div>
       </div>
 
-      <div class="p-4 lg:px-24 bg-white border-t">
+      <div class="p-4 lg:px-12 lg:pb-8 border-t bg-white">
         <div class="max-w-4xl mx-auto">
-          <div class="relative flex items-center">
+          <div class="relative flex items-end gap-2 bg-gray-100 p-2 rounded-[28px] focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 border border-transparent transition-all">
             <input 
               type="text" 
               id="chatInput" 
-              placeholder="Ask a question about your documents..." 
-              class="w-full pl-4 pr-14 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm"
+              placeholder="Ask a question..." 
+              class="flex-1 bg-transparent border-0 py-2.5 px-4 focus:ring-0 outline-none text-sm lg:text-base"
               disabled
             >
             <button 
               id="sendBtn" 
-              class="absolute right-2 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              class="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all flex-shrink-0"
               disabled
             >
-              <i class="fas fa-arrow-up"></i>
+              <i class="fas fa-arrow-up text-sm"></i>
             </button>
           </div>
-          <p class="text-[10px] text-center text-gray-400 mt-2" id="inputHint">
-            Powered by Web-LLM (Local Browser Inference)
-          </p>
+          <div id="inputHint" class="text-[10px] text-center text-gray-400 mt-3 font-medium tracking-wide">
+            Initializing Engine...
+          </div>
         </div>
       </div>
 
     </section>
   </main>
-  
-  <script type="module">
-    // ============================================
-    // PDF Processor Module
-    // ============================================
-    const PDFProcessor = (() => {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-      async function extractTextFromPDF(file) {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let fullText = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items.map(item => item.str).join(' ');
-          fullText += pageText + '\n';
-        }
-        return fullText;
-      }
-
-      function recursiveChunkText(text, chunkSize = 800, overlap = 100) {
-        const chunks = [];
-        text = text.replace(/\s+/g, ' ').trim();
-        let start = 0;
-        while (start < text.length) {
-          let end = start + chunkSize;
-          if (end >= text.length) {
-            chunks.push(text.slice(start));
-            break;
-          }
-          let breakPoint = -1;
-          const lookBack = 200; 
-          const slice = text.slice(Math.max(start, end - lookBack), end);
-          const lastPeriod = slice.lastIndexOf('. ');
-          if (lastPeriod !== -1) {
-            breakPoint = Math.max(start, end - lookBack) + lastPeriod + 1;
-          } else {
-            const lastSpace = slice.lastIndexOf(' ');
-            if (lastSpace !== -1) breakPoint = Math.max(start, end - lookBack) + lastSpace;
-            else breakPoint = end;
-          }
-          chunks.push(text.slice(start, breakPoint).trim());
-          start = breakPoint - overlap; 
-        }
-        return chunks.filter(c => c.length > 50); 
-      }
-
-      async function processFile(file) {
-        const text = await extractTextFromPDF(file);
-        const chunks = recursiveChunkText(text);
-        return {
-          name: file.name,
-          size: file.size,
-          chunks: chunks,
-          charCount: text.length,
-          chunkCount: chunks.length
-        };
-      }
-
-      return { processFile };
-    })();
-
-    // ============================================
-    // Embeddings Engine Module
-    // ============================================
-    const EmbeddingsEngine = (() => {
-      let pipeline = null;
-      let isReady = false;
-
-      async function initialize() {
-        try {
-          console.log('🔄 Loading embedding model...');
-          const { pipeline: pipelineFn } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
-          pipeline = await pipelineFn('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-          isReady = true;
-          console.log('✅ Embedding model ready');
-          return true;
-        } catch (error) {
-          console.error('❌ Embedding model failed:', error);
-          throw error;
-        }
-      }
-
-      async function generateEmbedding(text) {
-        if (!isReady) throw new Error('Embeddings not ready');
-        const output = await pipeline(text, { pooling: 'mean', normalize: true });
-        return Array.from(output.data);
-      }
-
-      async function generateBatchEmbeddings(texts, onProgress) {
-        const embeddings = [];
-        for (let i = 0; i < texts.length; i++) {
-          embeddings.push(await generateEmbedding(texts[i]));
-          if (onProgress) onProgress(i + 1, texts.length);
-        }
-        return embeddings;
-      }
-
-      return { initialize, generateEmbedding, generateBatchEmbeddings };
-    })();
-
-    // ============================================
-    // Vector Store Module
-    // ============================================
-    const VectorStore = (() => {
-      let store = [];
-
-      function cosineSimilarity(vecA, vecB) {
-        let dotProduct = 0, normA = 0, normB = 0;
-        for (let i = 0; i < vecA.length; i++) {
-          dotProduct += vecA[i] * vecB[i];
-          normA += vecA[i] * vecA[i];
-          normB += vecB[i] * vecB[i];
-        }
-        const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-        return denominator === 0 ? 0 : dotProduct / denominator;
-      }
-
-      function addVectors(entries) {
-        entries.forEach(entry => {
-          store.push({
-            id: Date.now() + Math.random(),
-            text: entry.text,
-            embedding: entry.embedding,
-            source: entry.source,
-            timestamp: new Date().toISOString()
-          });
-        });
-      }
-
-      function removeVectorsBySource(sourceName) {
-        store = store.filter(item => item.source !== sourceName);
-      }
-
-      async function search(queryEmbedding, topK = 5) {
-        if (store.length === 0) return [];
-        const results = store.map(item => ({
-          ...item,
-          similarity: cosineSimilarity(queryEmbedding, item.embedding)
-        }));
-        results.sort((a, b) => b.similarity - a.similarity);
-        return results.slice(0, topK);
-      }
-
-      function clear() { store = []; }
-      function getStats() {
-        return {
-          count: store.length,
-          sources: [...new Set(store.map(item => item.source))]
-        };
-      }
-
-      return { addVectors, removeVectorsBySource, search, clear, getStats };
-    })();
-
-    // ============================================
-    // LLM Engine Module
-    // ============================================
-    const LLMEngine = (() => {
-      let engine = null;
-      let isReady = false;
-      let currentModelId = "Phi-3-mini-4k-instruct-q4f16_1-MLC";
-      
-      let config = {
-        temperature: 0.3,
-        max_tokens: 1024,
-        top_p: 0.7
-      };
-
-      async function initialize(modelId, onProgress) {
-        try {
-          isReady = false;
-          currentModelId = modelId || currentModelId;
-          console.log(`🔄 Loading LLM: ${currentModelId}...`);
-          
-          const { CreateMLCEngine } = await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.46/lib/index.min.js');
-          
-          engine = await CreateMLCEngine(
-            currentModelId, 
-            {
-              initProgressCallback: (progress) => {
-                if (onProgress) onProgress(progress);
-              }
-            }
-          );
-          
-          isReady = true;
-          console.log('✅ LLM ready');
-          return true;
-        } catch (error) {
-          console.error('❌ LLM loading failed:', error);
-          throw error;
-        }
-      }
-
-      function updateConfig(newConfig) {
-        config = { ...config, ...newConfig };
-        console.log("⚙️ LLM Config updated:", config);
-      }
-
-      async function chat(messages) {
-        if (!isReady) throw new Error('LLM not ready');
-        
-        const response = await engine.chat.completions.create({
-          messages: messages,
-          temperature: parseFloat(config.temperature),
-          max_tokens: parseInt(config.max_tokens),
-          top_p: config.top_p
-        });
-        
-        return response.choices[0].message.content;
-      }
-
-      return { initialize, chat, updateConfig, isReady: () => isReady };
-    })();
-
-    // ============================================
-    // Main Application
-    // ============================================
-    const App = (() => {
-      const state = {
-        files: [],
-        chatHistory: [],
-        isEmbeddingReady: false,
-        isLLMReady: false,
-        isProcessing: false
-      };
-
-      // FIXED: Elements reference only what exists in HTML
-      const elements = {
-        dropZone: document.getElementById('dropZone'),
-        fileInput: document.getElementById('fileInput'),
-        totalVectors: document.getElementById('totalVectors'),
-        memoryBank: document.getElementById('memoryBank'),
-        chatContainer: document.getElementById('chatContainer'),
-        chatInput: document.getElementById('chatInput'),
-        sendBtn: document.getElementById('sendBtn'),
-        clearBtn: document.getElementById('clearBtn'),
-        embeddingStatus: document.getElementById('embeddingStatus'),
-        llmStatus: document.getElementById('llmStatus'),
-        processingStatus: document.getElementById('processingStatus'),
-        inputHint: document.getElementById('inputHint'),
-        
-        // Control Elements
-        tempSlider: document.getElementById('tempSlider'),
-        tempValue: document.getElementById('tempValue'),
-        tokenInput: document.getElementById('tokenInput'),
-        modelSelect: document.getElementById('modelSelect')
-      };
-
-      const SYSTEM_PROMPT = `You are a precise Academic Research Assistant. 
-Your goal is to answer the user's question based ONLY on the provided Context chunks.
-
-Rules:
-1. Use the provided Context to answer.
-2. If the answer is not in the Context, state: "I cannot find information about this in the provided documents."
-3. Cite the document names provided in the context when making claims.
-4. Keep the tone professional and academic.`;
-
-      async function init() {
-        console.log('📚 Initializing Application...');
-        setupControlListeners();
-
-        await Promise.all([
-          initializeEmbeddings(),
-          initializeLLM(elements.modelSelect.value)
-        ]);
-        
-        setupEventListeners();
-        checkReadyState();
-      }
-
-      // ----------------------------------------
-      // Control Logic (FIXED to prevent null error)
-      // ----------------------------------------
-      function setupControlListeners() {
-        // Temperature Slider
-        if(elements.tempSlider) {
-          elements.tempSlider.addEventListener('input', (e) => {
-            const val = e.target.value;
-            if(elements.tempValue) elements.tempValue.textContent = val;
-            LLMEngine.updateConfig({ temperature: val });
-          });
-        }
-
-        // Max Tokens Input
-        if(elements.tokenInput) {
-          elements.tokenInput.addEventListener('change', (e) => {
-            LLMEngine.updateConfig({ max_tokens: e.target.value });
-          });
-        }
-
-        // Model Selector
-        if(elements.modelSelect) {
-          elements.modelSelect.addEventListener('change', async (e) => {
-            const modelId = e.target.value;
-            const modelName = e.target.options[e.target.selectedIndex].text;
-            
-            if(confirm(`Switching to ${modelName} requires downloading the model. Continue?`)) {
-              state.isLLMReady = false;
-              elements.sendBtn.disabled = true;
-              elements.chatInput.disabled = true;
-              
-              updateStatus(elements.llmStatus, 'Switching Model...', 'loading');
-              
-              try {
-                await initializeLLM(modelId);
-                checkReadyState();
-              } catch(err) {
-                alert("Failed to load model. Please refresh.");
-              }
-            } else {
-              e.target.value = LLMEngine.currentModelId; 
-            }
-          });
-        }
-      }
-
-      // ----------------------------------------
-      // Initialization Logic
-      // ----------------------------------------
-      async function initializeEmbeddings() {
-        try {
-          await EmbeddingsEngine.initialize();
-          state.isEmbeddingReady = true;
-          updateStatus(elements.embeddingStatus, '✓ Embeddings Ready', 'success');
-        } catch (error) {
-          updateStatus(elements.embeddingStatus, '✗ Embeddings Failed', 'error');
-        }
-      }
-
-      async function initializeLLM(modelId) {
-        try {
-          await LLMEngine.initialize(modelId, (progress) => {
-            const percent = (progress.progress * 100).toFixed(0);
-            updateStatus(elements.llmStatus, `Loading: ${percent}%`, 'loading');
-            elements.inputHint.textContent = `Downloading AI Model (${percent}%)... please wait.`;
-          });
-          state.isLLMReady = true;
-          updateStatus(elements.llmStatus, '✓ LLM Ready', 'success');
-          elements.inputHint.textContent = 'Ready to chat.';
-        } catch (error) {
-          updateStatus(elements.llmStatus, '✗ LLM Failed', 'error');
-        }
-      }
-
-      function updateStatus(element, text, type) {
-        element.textContent = text;
-        element.className = 'px-4 py-2 rounded-full text-[11px] font-semibold ';
-        if (type === 'success') element.className += 'bg-green-100 text-green-700';
-        else if (type === 'error') element.className += 'bg-red-100 text-red-700';
-        else element.className += 'bg-orange-100 text-orange-700';
-      }
-
-      function checkReadyState() {
-        if (state.isEmbeddingReady && state.isLLMReady) {
-          elements.chatInput.disabled = false;
-          elements.sendBtn.disabled = false;
-        }
-      }
-
-      function setupEventListeners() {
-        elements.dropZone.addEventListener('click', () => elements.fileInput.click());
-        elements.dropZone.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          elements.dropZone.classList.add('bg-indigo-100');
-        });
-        elements.dropZone.addEventListener('dragleave', () => {
-          elements.dropZone.classList.remove('bg-indigo-100');
-        });
-        elements.dropZone.addEventListener('drop', handleDrop);
-        elements.fileInput.addEventListener('change', (e) => handleFiles(Array.from(e.target.files)));
-        elements.sendBtn.addEventListener('click', handleSendMessage);
-        elements.chatInput.addEventListener('keypress', (e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage();
-          }
-        });
-        elements.clearBtn.addEventListener('click', clearAllData);
-      }
-
-      function handleDrop(e) {
-        e.preventDefault();
-        elements.dropZone.classList.remove('bg-indigo-100');
-        const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-        if (files.length > 0) handleFiles(files);
-      }
-
-      async function handleFiles(files) {
-        if (!state.isEmbeddingReady) {
-          alert('Please wait for embeddings to load');
-          return;
-        }
-
-        state.isProcessing = true;
-
-        for (const file of files) {
-          if (state.files.some(f => f.name === file.name)) {
-            alert(`File "${file.name}" is already loaded.`);
-            continue;
-          }
-          await processAndEmbedFile(file);
-        }
-
-        state.isProcessing = false;
-        updateUI();
-      }
-
-      async function processAndEmbedFile(file) {
-        try {
-          showProcessingStatus(`Processing ${file.name}...`, 0);
-          const fileData = await PDFProcessor.processFile(file);
-          
-          showProcessingStatus(`Embedding ${file.name}...`, 0);
-          const embeddings = await EmbeddingsEngine.generateBatchEmbeddings(
-            fileData.chunks,
-            (current, total) => {
-              const progress = (current / total) * 100;
-              showProcessingStatus(`Embedding ${file.name}: ${current}/${total}`, progress);
-            }
-          );
-
-          const vectorEntries = fileData.chunks.map((chunk, idx) => ({
-            text: chunk,
-            embedding: embeddings[idx],
-            source: file.name
-          }));
-
-          VectorStore.addVectors(vectorEntries);
-          state.files.push(fileData);
-
-          console.log(`✅ Processed: ${file.name}`);
-        } catch (error) {
-          alert(`Error: ${error.message}`);
-        }
-      }
-
-      function removeFile(fileName) {
-        if(!confirm(`Are you sure you want to remove "${fileName}"?`)) return;
-        VectorStore.removeVectorsBySource(fileName);
-        state.files = state.files.filter(f => f.name !== fileName);
-        updateUI();
-      }
-
-      function showProcessingStatus(message, progress) {
-        elements.processingStatus.innerHTML = `
-          <div class="mt-3 bg-indigo-50 rounded-lg p-3">
-            <div class="text-[10px] text-indigo-700 mb-2">${message}</div>
-            <div class="w-full bg-gray-200 rounded-full h-1.5">
-              <div class="bg-indigo-600 h-1.5 rounded-full transition-all" style="width: ${progress}%"></div>
-            </div>
-          </div>
-        `;
-      }
-
-      async function handleSendMessage() {
-        const query = elements.chatInput.value.trim();
-        if (!query || !state.isLLMReady) return;
-
-        elements.chatInput.value = '';
-        elements.sendBtn.disabled = true;
-
-        addMessageToChat('user', query);
-
-        try {
-          let context = '';
-          let citations = [];
-
-          if (VectorStore.getStats().count > 0) {
-            const queryEmbedding = await EmbeddingsEngine.generateEmbedding(query);
-            const results = await VectorStore.search(queryEmbedding, 5);
-            
-            citations = results.map(r => ({
-              source: r.source,
-              text: r.text,
-              similarity: r.similarity
-            }));
-
-            context = results.map((r, i) => 
-              `[Document: ${r.source}]\n${r.text}`
-            ).join('\n\n');
-          }
-
-          const messages = [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...state.chatHistory.slice(-6),
-            { 
-              role: 'user', 
-              content: context ? 
-                `Context:\n${context}\n\nQuestion: ${query}` : 
-                query 
-            }
-          ];
-
-          const response = await LLMEngine.chat(messages);
-
-          state.chatHistory.push(
-            { role: 'user', content: query },
-            { role: 'assistant', content: response }
-          );
-
-          addMessageToChat('assistant', response, citations);
-
-        } catch (error) {
-          addMessageToChat('error', `Error: ${error.message}`);
-        } finally {
-          elements.sendBtn.disabled = false;
-          elements.chatInput.focus();
-        }
-      }
-
-      function addMessageToChat(role, content, citations = []) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'chat-message';
-
-        if (role === 'user') {
-          messageDiv.innerHTML = `
-            <div class="flex justify-end mb-4">
-              <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-none px-5 py-3 max-w-[80%] text-sm">
-                ${escapeHtml(content)}
-              </div>
-            </div>
-          `;
-        } else if (role === 'assistant') {
-          let citationsHtml = '';
-          const uniqueSources = [...new Set(citations.map(c => c.source))];
-          
-          if (uniqueSources.length > 0) {
-            citationsHtml = `
-              <div class="mt-3 pt-2 border-t border-gray-100">
-                <div class="text-[10px] text-gray-400 mb-1 font-semibold uppercase tracking-wider">Sources</div>
-                <div class="flex flex-wrap gap-2">
-                  ${uniqueSources.map(source => `
-                    <span class="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100">
-                      📄 ${escapeHtml(source)}
-                    </span>
-                  `).join('')}
-                </div>
-              </div>
-            `;
-          }
-
-          messageDiv.innerHTML = `
-            <div class="flex justify-start mb-6">
-              <div class="flex gap-4 max-w-2xl">
-                <div class="flex-shrink-0 mt-1">
-                   <div class="bg-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs">AI</div>
-                </div>
-                <div class="flex-1">
-                  <div class="text-gray-800 text-sm leading-relaxed prose prose-sm max-w-none">
-                    ${marked.parse(content)}
-                  </div>
-                  ${citationsHtml}
-                </div>
-              </div>
-            </div>
-          `;
-        } else {
-          messageDiv.innerHTML = `
-            <div class="flex justify-center mb-4">
-              <div class="bg-red-100 text-red-700 rounded-lg px-4 py-3 text-sm">
-                ${escapeHtml(content)}
-              </div>
-            </div>
-          `;
-        }
-
-        elements.chatContainer.appendChild(messageDiv);
-        elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
-      }
-
-      function updateUI() {
-        const stats = VectorStore.getStats();
-        elements.totalVectors.textContent = `${stats.count} Vectors`;
-
-        if (state.files.length > 0) {
-          elements.memoryBank.innerHTML = `
-            <div class="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-              ${state.files.map(file => `
-                <div class="file-item flex justify-between items-center bg-white border border-gray-200 p-2 rounded-lg hover:border-indigo-300 transition-all">
-                  <div class="flex items-center gap-2 overflow-hidden">
-                    <span class="text-lg">📄</span>
-                    <div class="flex flex-col overflow-hidden">
-                      <span class="text-xs font-semibold text-gray-700 truncate" title="${file.name}">${file.name}</span>
-                      <span class="text-[10px] text-gray-400">${file.chunkCount} chunks</span>
-                    </div>
-                  </div>
-                  <button onclick="window.removeFile('${file.name}')" class="text-gray-400 hover:text-red-500 p-1.5 transition-colors" title="Delete file">
-                    <i class="fas fa-trash-alt"></i>
-                  </button>
-                </div>
-              `).join('')}
-            </div>
-          `;
-        } else {
-           elements.memoryBank.innerHTML = `
-            <div class="text-center opacity-60 text-xs italic mt-4">No documents loaded</div>
-          `;
-        }
-
-        elements.processingStatus.innerHTML = '';
-      }
-
-      function clearAllData() {
-        if (confirm('Clear all data and chat history?')) {
-          VectorStore.clear();
-          state.files = [];
-          state.chatHistory = [];
-          elements.chatContainer.innerHTML = `
-            <div class="flex flex-col items-center justify-center h-full text-center text-gray-400">
-              <div class="bg-indigo-50 text-indigo-500 w-16 h-16 rounded-full flex items-center justify-center text-2xl mb-4">
-                <i class="fas fa-robot"></i>
-              </div>
-              <h2 class="text-lg font-semibold text-gray-700">How can I help you today?</h2>
-            </div>
-          `;
-          updateUI();
-        }
-      }
-
-      function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-      }
-
-      window.removeFile = removeFile;
-
-      return { init };
-    })();
-
-    const marked = {
-      parse: (text) => {
-        text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-        text = text.replace(/```([\s\S]*?)```/g, '<pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto my-2">$1</pre>');
-        text = text.replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-sm font-mono text-indigo-600">$1</code>');
-        text = text.replace(/\n/g, '<br>');
-        return text;
-      }
-    };
-
-    App.init();
-  </script>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
