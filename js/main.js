@@ -1,5 +1,5 @@
 import { PDFProcessor } from './pdf.js';
-import { EmbeddingsEngine, VectorStore } from './store.js';
+import { EmbeddingsEngine, VectorStore } from './transformers.js';
 import { LLMEngine } from './llm.js';
 
 const SYSTEM_PROMPT = `You are a precise Academic Research Assistant. 
